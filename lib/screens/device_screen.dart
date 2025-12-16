@@ -26,6 +26,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
   bool _isDiscoveringServices = false;
   bool _isConnecting = false;
   bool _isDisconnecting = false;
+  
+  // NEW: Store the characteristic value
+  List<int>? _characteristicValue;
+  StreamSubscription<List<int>>? _characteristicSubscription;
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
@@ -77,6 +81,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     _mtuSubscription.cancel();
     _isConnectingSubscription.cancel();
     _isDisconnectingSubscription.cancel();
+    _characteristicSubscription?.cancel(); // NEW: Clean up subscription
     super.dispose();
   }
 
@@ -120,6 +125,50 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
+  // NEW: Method to subscribe to the specific characteristic
+  Future<void> subscribeToCharacteristic() async {
+    try {
+      // Find the service with UUID 0x181A
+      BluetoothService? targetService = _services.firstWhere(
+        (service) => service.uuid == Guid("181A"),
+        orElse: () => throw Exception("Service 0x181A not found"),
+      );
+
+      // Find the characteristic with UUID 0x2A6E
+      BluetoothCharacteristic? targetCharacteristic = targetService.characteristics.firstWhere(
+        (char) => char.uuid == Guid("2A6E"),
+        orElse: () => throw Exception("Characteristic 0x2A6E not found"),
+      );
+
+      // Check if characteristic supports notify
+      if (!targetCharacteristic.properties.notify) {
+        Snackbar.show(ABC.c, "Characteristic does not support notifications", success: false);
+        return;
+      }
+
+      // Enable notifications
+      await targetCharacteristic.setNotifyValue(true);
+      
+      // Subscribe to value changes
+      _characteristicSubscription = targetCharacteristic.lastValueStream.listen((value) {
+        if (mounted) {
+          setState(() {
+            _characteristicValue = value;
+          });
+        }
+        print("Received value from 0x2A6E: $value");
+        // You can also display it in a Snackbar if you want:
+        // Snackbar.show(ABC.c, "Value: $value", success: true);
+      });
+
+      Snackbar.show(ABC.c, "Subscribed to characteristic 0x2A6E", success: true);
+    } catch (e, backtrace) {
+      Snackbar.show(ABC.c, prettyException("Subscribe Error:", e), success: false);
+      print(e);
+      print("backtrace: $backtrace");
+    }
+  }
+
   Future onDiscoverServicesPressed() async {
     if (mounted) {
       setState(() {
@@ -129,6 +178,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       _services = await widget.device.discoverServices();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
+      
+      // NEW: Automatically subscribe after discovering services
+      await subscribeToCharacteristic();
+      
     } catch (e, backtrace) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
       print(e);
@@ -232,6 +285,17 @@ class _DeviceScreenState extends State<DeviceScreen> {
         ));
   }
 
+  // NEW: Widget to display the characteristic value
+  Widget buildCharacteristicValueTile(BuildContext context) {
+    return ListTile(
+      title: const Text('Characteristic 0x2A6E Value'),
+      subtitle: Text(_characteristicValue != null 
+        ? 'Raw: $_characteristicValue\nHex: ${_characteristicValue!.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}'
+        : 'Not subscribed yet'),
+      leading: const Icon(Icons.sensors),
+    );
+  }
+
   Widget buildConnectButton(BuildContext context) {
     return Row(children: [
       if (_isConnecting || _isDisconnecting) buildSpinner(context),
@@ -267,6 +331,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 trailing: buildGetServices(context),
               ),
               buildMtuTile(context),
+              buildCharacteristicValueTile(context), // NEW: Display the value
               ..._buildServiceTiles(context, widget.device),
             ],
           ),
