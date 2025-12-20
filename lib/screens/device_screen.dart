@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import '../widgets/service_tile.dart';
-import '../widgets/characteristic_tile.dart';
-import '../widgets/descriptor_tile.dart';
 import '../utils/snackbar.dart';
 import '../utils/extra.dart';
 
@@ -19,22 +16,21 @@ class DeviceScreen extends StatefulWidget {
 }
 
 class _DeviceScreenState extends State<DeviceScreen> {
-  int? _rssi;
-  int? _mtuSize;
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
   List<BluetoothService> _services = [];
-  bool _isDiscoveringServices = false;
   bool _isConnecting = false;
   bool _isDisconnecting = false;
   
-  // NEW: Store the characteristic value
-  List<int>? _characteristicValue;
-  StreamSubscription<List<int>>? _characteristicSubscription;
+  // Store characteristic objects for easy access
+  Map<String, BluetoothCharacteristic> _characteristics = {};
+  
+  // Store characteristic values
+  Map<String, List<int>> _characteristicValues = {};
+  Map<String, StreamSubscription<List<int>>> _characteristicSubscriptions = {};
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
   late StreamSubscription<bool> _isDisconnectingSubscription;
-  late StreamSubscription<int> _mtuSubscription;
 
   @override
   void initState() {
@@ -42,19 +38,11 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
     _connectionStateSubscription = widget.device.connectionState.listen((state) async {
       _connectionState = state;
+      
       if (state == BluetoothConnectionState.connected) {
-        _services = []; // must rediscover services
+        await _discoverAndSubscribe();
       }
-      if (state == BluetoothConnectionState.connected && _rssi == null) {
-        _rssi = await widget.device.readRssi();
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _mtuSubscription = widget.device.mtu.listen((value) {
-      _mtuSize = value;
+      
       if (mounted) {
         setState(() {});
       }
@@ -78,15 +66,72 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void dispose() {
     _connectionStateSubscription.cancel();
-    _mtuSubscription.cancel();
     _isConnectingSubscription.cancel();
     _isDisconnectingSubscription.cancel();
-    _characteristicSubscription?.cancel(); // NEW: Clean up subscription
+    
+    for (var subscription in _characteristicSubscriptions.values) {
+      subscription.cancel();
+    }
+    
     super.dispose();
   }
 
   bool get isConnected {
     return _connectionState == BluetoothConnectionState.connected;
+  }
+
+  Future<void> _discoverAndSubscribe() async {
+    try {
+      _services = await widget.device.discoverServices();
+      
+      BluetoothService? targetService;
+      try {
+        targetService = _services.firstWhere(
+          (service) => service.uuid == Guid("5cfd3a85-6b69-4396-85e3-bdef0b414d0a"),
+        );
+      } catch (e) {
+        Snackbar.show(ABC.c, "Service not found on this device", success: false);
+        return;
+      }
+
+      // Store characteristics for easy access and subscribe to all
+      for (var characteristic in targetService.characteristics) {
+        String uuid = characteristic.uuid.toString().toUpperCase();
+        _characteristics[uuid] = characteristic;
+        
+        // Subscribe to notifications if supported
+        if (characteristic.properties.notify) {
+          await characteristic.setNotifyValue(true);
+          
+          _characteristicSubscriptions[uuid] = characteristic.lastValueStream.listen((value) {
+            if (mounted) {
+              setState(() {
+                _characteristicValues[uuid] = value;
+              });
+            }
+          });
+        } else if (characteristic.properties.read) {
+          // Do initial read
+          try {
+            List<int> value = await characteristic.read();
+            if (mounted) {
+              setState(() {
+                _characteristicValues[uuid] = value;
+              });
+            }
+          } catch (e) {
+            // Ignore read errors
+          }
+        }
+      }
+
+      Snackbar.show(ABC.c, "Connected to remote", success: true);
+      
+    } catch (e, backtrace) {
+      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+      print(e);
+      print("backtrace: $backtrace");
+    }
   }
 
   Future onConnectPressed() async {
@@ -125,102 +170,29 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // NEW: Method to subscribe to the specific characteristic
-  Future<void> subscribeToCharacteristic() async {
+  // Write value 1 to a characteristic
+  Future<void> writeToCharacteristic(String uuid, String buttonName) async {
     try {
-      // Find the service with UUID 0x181A
-      BluetoothService? targetService = _services.firstWhere(
-        (service) => service.uuid == Guid("181A"),
-        orElse: () => throw Exception("Service 0x181A not found"),
-      );
-
-      // Find the characteristic with UUID 0x2A6E
-      BluetoothCharacteristic? targetCharacteristic = targetService.characteristics.firstWhere(
-        (char) => char.uuid == Guid("2A6E"),
-        orElse: () => throw Exception("Characteristic 0x2A6E not found"),
-      );
-
-      // Check if characteristic supports notify
-      if (!targetCharacteristic.properties.notify) {
-        Snackbar.show(ABC.c, "Characteristic does not support notifications", success: false);
+      BluetoothCharacteristic? characteristic = _characteristics[uuid.toUpperCase()];
+      
+      if (characteristic == null) {
+        Snackbar.show(ABC.c, "Characteristic not found", success: false);
         return;
       }
-
-      // Enable notifications
-      await targetCharacteristic.setNotifyValue(true);
       
-      // Subscribe to value changes
-      _characteristicSubscription = targetCharacteristic.lastValueStream.listen((value) {
-        if (mounted) {
-          setState(() {
-            _characteristicValue = value;
-          });
-        }
-        print("Received value from 0x2A6E: $value");
-        // You can also display it in a Snackbar if you want:
-        // Snackbar.show(ABC.c, "Value: $value", success: true);
-      });
-
-      Snackbar.show(ABC.c, "Subscribed to characteristic 0x2A6E", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Subscribe Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
-    }
-  }
-
-  Future onDiscoverServicesPressed() async {
-    if (mounted) {
-      setState(() {
-        _isDiscoveringServices = true;
-      });
-    }
-    try {
-      _services = await widget.device.discoverServices();
-      Snackbar.show(ABC.c, "Discover Services: Success", success: true);
+      if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+        Snackbar.show(ABC.c, "Characteristic does not support write", success: false);
+        return;
+      }
       
-      // NEW: Automatically subscribe after discovering services
-      await subscribeToCharacteristic();
+      // Write value 1
+      await characteristic.write([1], withoutResponse: characteristic.properties.writeWithoutResponse);
       
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+      Snackbar.show(ABC.c, "$buttonName activated", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
       print(e);
-      print("backtrace: $backtrace");
     }
-    if (mounted) {
-      setState(() {
-        _isDiscoveringServices = false;
-      });
-    }
-  }
-
-  Future onRequestMtuPressed() async {
-    try {
-      await widget.device.requestMtu(223, predelay: 0);
-      Snackbar.show(ABC.c, "Request Mtu: Success", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Change Mtu Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
-    }
-  }
-
-  List<Widget> _buildServiceTiles(BuildContext context, BluetoothDevice d) {
-    return _services
-        .map(
-          (s) => ServiceTile(
-            service: s,
-            characteristicTiles: s.characteristics.map((c) => _buildCharacteristicTile(c)).toList(),
-          ),
-        )
-        .toList();
-  }
-
-  CharacteristicTile _buildCharacteristicTile(BluetoothCharacteristic c) {
-    return CharacteristicTile(
-      characteristic: c,
-      descriptorTiles: c.descriptors.map((d) => DescriptorTile(descriptor: d)).toList(),
-    );
   }
 
   Widget buildSpinner(BuildContext context) {
@@ -236,63 +208,121 @@ class _DeviceScreenState extends State<DeviceScreen> {
     );
   }
 
-  Widget buildRemoteId(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Text('${widget.device.remoteId}'),
-    );
-  }
-
-  Widget buildRssiTile(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        isConnected ? const Icon(Icons.bluetooth_connected) : const Icon(Icons.bluetooth_disabled),
-        Text(((isConnected && _rssi != null) ? '${_rssi!} dBm' : ''), style: Theme.of(context).textTheme.bodySmall)
-      ],
-    );
-  }
-
-  Widget buildGetServices(BuildContext context) {
-    return IndexedStack(
-      index: (_isDiscoveringServices) ? 1 : 0,
-      children: <Widget>[
-        TextButton(
-          onPressed: onDiscoverServicesPressed,
-          child: const Text("Get Services"),
+  // Build the remote control interface
+  Widget buildRemoteControl() {
+    if (_characteristics.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20.0),
+          child: Text('Connecting to remote...'),
         ),
-        const IconButton(
-          icon: SizedBox(
-            width: 18.0,
-            height: 18.0,
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation(Colors.grey),
+      );
+    }
+
+    // Get timer value if available
+    String timerValue = "N/A";
+    List<int>? timerData = _characteristicValues["5CFD3A87-6B69-4396-85E3-BDEF0B414D0A"];
+    if (timerData != null && timerData.isNotEmpty) {
+      timerValue = timerData[0].toString();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Timer Display
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  const Icon(Icons.timer, size: 40, color: Colors.blue),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Timer Value',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    timerValue,
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
+                  ),
+                ],
+              ),
             ),
           ),
-          onPressed: null,
-        )
-      ],
-    );
-  }
-
-  Widget buildMtuTile(BuildContext context) {
-    return ListTile(
-        title: const Text('MTU Size'),
-        subtitle: Text('$_mtuSize bytes'),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: onRequestMtuPressed,
-        ));
-  }
-
-  // NEW: Widget to display the characteristic value
-  Widget buildCharacteristicValueTile(BuildContext context) {
-    return ListTile(
-      title: const Text('Characteristic 0x2A6E Value'),
-      subtitle: Text(_characteristicValue != null 
-        ? 'Raw: $_characteristicValue\nHex: ${_characteristicValue!.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}'
-        : 'Not subscribed yet'),
-      leading: const Icon(Icons.sensors),
+          
+          const SizedBox(height: 20),
+          
+          // Power Button
+          ElevatedButton.icon(
+            onPressed: isConnected 
+              ? () => writeToCharacteristic("5cfd3a86-6b69-4396-85e3-bdef0b414d0a", "Power")
+              : null,
+            icon: const Icon(Icons.power_settings_new, size: 28),
+            label: const Text("Power On/Off", style: TextStyle(fontSize: 18)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 60),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Speed Button
+          ElevatedButton.icon(
+            onPressed: isConnected 
+              ? () => writeToCharacteristic("5cfd3a88-6b69-4396-85e3-bdef0b414d0a", "Speed")
+              : null,
+            icon: const Icon(Icons.speed, size: 28),
+            label: const Text("Speed (1-4)", style: TextStyle(fontSize: 18)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 60),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Timer On/Off Button
+          ElevatedButton.icon(
+            onPressed: isConnected 
+              ? () => writeToCharacteristic("5cfd3a89-6b69-4396-85e3-bdef0b414d0a", "Timer")
+              : null,
+            icon: const Icon(Icons.timer_outlined, size: 28),
+            label: const Text("Timer On/Off", style: TextStyle(fontSize: 18)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 60),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Swing Button
+          ElevatedButton.icon(
+            onPressed: isConnected 
+              ? () => writeToCharacteristic("5cfd3a8a-6b69-4396-85e3-bdef0b414d0a", "Swing")
+              : null,
+            icon: const Icon(Icons.sync, size: 28),
+            label: const Text("Swing", style: TextStyle(fontSize: 18)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 60),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -322,19 +352,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
           actions: [buildConnectButton(context), const SizedBox(width: 15)],
         ),
         body: SingleChildScrollView(
-          child: Column(
-            children: <Widget>[
-              buildRemoteId(context),
-              ListTile(
-                leading: buildRssiTile(context),
-                title: Text('Device is ${_connectionState.toString().split('.')[1]}.'),
-                trailing: buildGetServices(context),
-              ),
-              buildMtuTile(context),
-              buildCharacteristicValueTile(context), // NEW: Display the value
-              ..._buildServiceTiles(context, widget.device),
-            ],
-          ),
+          child: buildRemoteControl(),
         ),
       ),
     );
