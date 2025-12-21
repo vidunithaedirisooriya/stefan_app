@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
@@ -28,6 +29,14 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Map<String, List<int>> _characteristicValues = {};
   Map<String, StreamSubscription<List<int>>> _characteristicSubscriptions = {};
 
+  // Timer picker value and controller
+  int _currentTimerValue = 0;
+  FixedExtentScrollController? _pickerController;
+  
+  // Track if user is manually controlling the picker
+  bool _userIsScrolling = false;
+  Timer? _scrollDebounceTimer;
+
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
   late StreamSubscription<bool> _isConnectingSubscription;
   late StreamSubscription<bool> _isDisconnectingSubscription;
@@ -35,6 +44,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void initState() {
     super.initState();
+
+    _pickerController = FixedExtentScrollController(initialItem: _currentTimerValue);
 
     _connectionStateSubscription = widget.device.connectionState.listen((state) async {
       _connectionState = state;
@@ -68,6 +79,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
     _connectionStateSubscription.cancel();
     _isConnectingSubscription.cancel();
     _isDisconnectingSubscription.cancel();
+    _pickerController?.dispose();
+    _scrollDebounceTimer?.cancel();
     
     for (var subscription in _characteristicSubscriptions.values) {
       subscription.cancel();
@@ -107,6 +120,20 @@ class _DeviceScreenState extends State<DeviceScreen> {
             if (mounted) {
               setState(() {
                 _characteristicValues[uuid] = value;
+                
+                // Update timer value when received from device
+                if (uuid == "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A" && value.isNotEmpty) {
+                  int newValue = value[0];
+                  if (newValue != _currentTimerValue && !_userIsScrolling) {
+                    // Only update picker if user is NOT manually scrolling
+                    _currentTimerValue = newValue;
+                    _pickerController?.animateToItem(
+                      newValue,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  }
+                }
               });
             }
           });
@@ -117,6 +144,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
             if (mounted) {
               setState(() {
                 _characteristicValues[uuid] = value;
+                
+                // Set initial timer value
+                if (uuid == "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A" && value.isNotEmpty) {
+                  int newValue = value[0];
+                  _currentTimerValue = newValue;
+                  _pickerController?.jumpToItem(newValue);
+                }
               });
             }
           } catch (e) {
@@ -195,6 +229,61 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
+  // Write timer value to BLE characteristic
+  Future<void> writeTimerValue(int value) async {
+    try {
+      String uuid = "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A";
+      BluetoothCharacteristic? characteristic = _characteristics[uuid];
+      
+      if (characteristic == null) {
+        Snackbar.show(ABC.c, "Timer characteristic not found", success: false);
+        return;
+      }
+      
+      if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+        Snackbar.show(ABC.c, "Timer characteristic does not support write", success: false);
+        return;
+      }
+      
+      print("Writing timer value: $value");
+      
+      // Write the value
+      await characteristic.write([value], withoutResponse: characteristic.properties.writeWithoutResponse);
+      
+      Snackbar.show(ABC.c, "Timer set to $value", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Timer Write Error:", e), success: false);
+      print(e);
+    }
+  }
+
+  // Handle user scrolling the picker
+  void onPickerChanged(int index) {
+    // User is actively scrolling
+    setState(() {
+      _userIsScrolling = true;
+      _currentTimerValue = index;
+    });
+    
+    print("User scrolling to: $index");
+    
+    // Cancel previous timer if exists
+    _scrollDebounceTimer?.cancel();
+    
+    // Start a new timer - write value after user stops scrolling for 500ms
+    _scrollDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      print("User stopped scrolling at: $index, writing to BLE");
+      writeTimerValue(index);
+      
+      // Re-enable automatic updates after a short delay
+      Future.delayed(const Duration(milliseconds: 100), () {
+        setState(() {
+          _userIsScrolling = false;
+        });
+      });
+    });
+  }
+
   Widget buildSpinner(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(14.0),
@@ -204,6 +293,55 @@ class _DeviceScreenState extends State<DeviceScreen> {
           backgroundColor: Colors.black12,
           color: Colors.black26,
         ),
+      ),
+    );
+  }
+
+  // Build the permanent timer picker
+  Widget buildTimerPicker() {
+    return Card(
+      elevation: 2,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.timer, color: Colors.blue),
+                const SizedBox(width: 8),
+                const Text(
+                  'Timer Value',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                if (_userIsScrolling) ...[
+                  const SizedBox(width: 8),
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 150,
+            child: CupertinoPicker(
+              scrollController: _pickerController,
+              itemExtent: 40,
+              onSelectedItemChanged: onPickerChanged,
+              children: List<Widget>.generate(256, (int index) {
+                return Center(
+                  child: Text(
+                    '$index',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -219,40 +357,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
       );
     }
 
-    // Get timer value if available
-    String timerValue = "N/A";
-    List<int>? timerData = _characteristicValues["5CFD3A87-6B69-4396-85E3-BDEF0B414D0A"];
-    if (timerData != null && timerData.isNotEmpty) {
-      timerValue = timerData[0].toString();
-    }
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Timer Display
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  const Icon(Icons.timer, size: 40, color: Colors.blue),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Timer Value',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    timerValue,
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Permanent Timer Picker
+          buildTimerPicker(),
           
           const SizedBox(height: 20),
           
