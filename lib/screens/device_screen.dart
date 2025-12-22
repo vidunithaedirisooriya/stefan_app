@@ -29,12 +29,18 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Map<String, List<int>> _characteristicValues = {};
   Map<String, StreamSubscription<List<int>>> _characteristicSubscriptions = {};
 
-  // Timer picker value and controller
+  // State values
   int _currentTimerValue = 0;
+  bool _isPowerOn = false;
+  bool _isTimerOn = false;
+  bool _isSwingOn = false;
+  int _speedValue = 1;
+  
   FixedExtentScrollController? _pickerController;
   
-  // Track if user is manually controlling the picker
-  bool _userIsScrolling = false;
+  // Track if user is manually controlling
+  bool _userIsScrollingPicker = false;
+  bool _userIsMovingSlider = false;
   Timer? _scrollDebounceTimer;
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
@@ -93,6 +99,19 @@ class _DeviceScreenState extends State<DeviceScreen> {
     return _connectionState == BluetoothConnectionState.connected;
   }
 
+  // Calculate end time
+  String getTimerEndTime() {
+    if (_currentTimerValue == 0) return "";
+    
+    DateTime now = DateTime.now();
+    DateTime endTime = now.add(Duration(minutes: _currentTimerValue));
+    
+    String hour = endTime.hour.toString().padLeft(2, '0');
+    String minute = endTime.minute.toString().padLeft(2, '0');
+    
+    return "$hour:$minute";
+  }
+
   Future<void> _discoverAndSubscribe() async {
     try {
       _services = await widget.device.discoverServices();
@@ -117,22 +136,38 @@ class _DeviceScreenState extends State<DeviceScreen> {
           await characteristic.setNotifyValue(true);
           
           _characteristicSubscriptions[uuid] = characteristic.lastValueStream.listen((value) {
-            if (mounted) {
+            if (mounted && value.isNotEmpty) {
               setState(() {
                 _characteristicValues[uuid] = value;
                 
-                // Update timer value when received from device
-                if (uuid == "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A" && value.isNotEmpty) {
-                  int newValue = value[0];
-                  if (newValue != _currentTimerValue && !_userIsScrolling) {
-                    // Only update picker if user is NOT manually scrolling
-                    _currentTimerValue = newValue;
-                    _pickerController?.animateToItem(
-                      newValue,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  }
+                // Update state based on characteristic
+                switch (uuid) {
+                  case "5CFD3A86-6B69-4396-85E3-BDEF0B414D0A": // Power
+                    _isPowerOn = value[0] == 1;
+                    break;
+                  case "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A": // Timer value
+                    int newValue = value[0];
+                    if (newValue != _currentTimerValue && !_userIsScrollingPicker) {
+                      _currentTimerValue = newValue;
+                      _pickerController?.animateToItem(
+                        newValue,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                    break;
+                  case "5CFD3A88-6B69-4396-85E3-BDEF0B414D0A": // Speed
+                    int newSpeed = value[0];
+                    if (newSpeed >= 1 && newSpeed <= 4 && !_userIsMovingSlider) {
+                      _speedValue = newSpeed;
+                    }
+                    break;
+                  case "5CFD3A89-6B69-4396-85E3-BDEF0B414D0A": // Timer on/off
+                    _isTimerOn = value[0] == 1;
+                    break;
+                  case "5CFD3A8A-6B69-4396-85E3-BDEF0B414D0A": // Swing
+                    _isSwingOn = value[0] == 1;
+                    break;
                 }
               });
             }
@@ -141,15 +176,30 @@ class _DeviceScreenState extends State<DeviceScreen> {
           // Do initial read
           try {
             List<int> value = await characteristic.read();
-            if (mounted) {
+            if (mounted && value.isNotEmpty) {
               setState(() {
                 _characteristicValues[uuid] = value;
                 
-                // Set initial timer value
-                if (uuid == "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A" && value.isNotEmpty) {
-                  int newValue = value[0];
-                  _currentTimerValue = newValue;
-                  _pickerController?.jumpToItem(newValue);
+                // Set initial values
+                switch (uuid) {
+                  case "5CFD3A86-6B69-4396-85E3-BDEF0B414D0A":
+                    _isPowerOn = value[0] == 1;
+                    break;
+                  case "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A":
+                    _currentTimerValue = value[0];
+                    _pickerController?.jumpToItem(value[0]);
+                    break;
+                  case "5CFD3A88-6B69-4396-85E3-BDEF0B414D0A":
+                    if (value[0] >= 1 && value[0] <= 4) {
+                      _speedValue = value[0];
+                    }
+                    break;
+                  case "5CFD3A89-6B69-4396-85E3-BDEF0B414D0A":
+                    _isTimerOn = value[0] == 1;
+                    break;
+                  case "5CFD3A8A-6B69-4396-85E3-BDEF0B414D0A":
+                    _isSwingOn = value[0] == 1;
+                    break;
                 }
               });
             }
@@ -204,8 +254,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Write value 1 to a characteristic
-  Future<void> writeToCharacteristic(String uuid, String buttonName) async {
+  // Write value to a characteristic
+  Future<void> writeToCharacteristic(String uuid, int value, String buttonName) async {
     try {
       BluetoothCharacteristic? characteristic = _characteristics[uuid.toUpperCase()];
       
@@ -219,8 +269,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
         return;
       }
       
-      // Write value 1
-      await characteristic.write([1], withoutResponse: characteristic.properties.writeWithoutResponse);
+      await characteristic.write([value], withoutResponse: characteristic.properties.writeWithoutResponse);
       
       Snackbar.show(ABC.c, "$buttonName activated", success: true);
     } catch (e) {
@@ -229,57 +278,42 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Write timer value to BLE characteristic
-  Future<void> writeTimerValue(int value) async {
-    try {
-      String uuid = "5CFD3A87-6B69-4396-85E3-BDEF0B414D0A";
-      BluetoothCharacteristic? characteristic = _characteristics[uuid];
-      
-      if (characteristic == null) {
-        Snackbar.show(ABC.c, "Timer characteristic not found", success: false);
-        return;
-      }
-      
-      if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
-        Snackbar.show(ABC.c, "Timer characteristic does not support write", success: false);
-        return;
-      }
-      
-      print("Writing timer value: $value");
-      
-      // Write the value
-      await characteristic.write([value], withoutResponse: characteristic.properties.writeWithoutResponse);
-      
-      Snackbar.show(ABC.c, "Timer set to $value", success: true);
-    } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Timer Write Error:", e), success: false);
-      print(e);
-    }
-  }
-
   // Handle user scrolling the picker
   void onPickerChanged(int index) {
-    // User is actively scrolling
     setState(() {
-      _userIsScrolling = true;
+      _userIsScrollingPicker = true;
       _currentTimerValue = index;
     });
     
-    print("User scrolling to: $index");
-    
-    // Cancel previous timer if exists
     _scrollDebounceTimer?.cancel();
     
-    // Start a new timer - write value after user stops scrolling for 500ms
     _scrollDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      print("User stopped scrolling at: $index, writing to BLE");
-      writeTimerValue(index);
+      writeToCharacteristic("5cfd3a87-6b69-4396-85e3-bdef0b414d0a", index, "Timer");
       
-      // Re-enable automatic updates after a short delay
       Future.delayed(const Duration(milliseconds: 100), () {
         setState(() {
-          _userIsScrolling = false;
+          _userIsScrollingPicker = false;
         });
+      });
+    });
+  }
+
+  // Handle speed slider change
+  void onSpeedChanged(double value) {
+    setState(() {
+      _userIsMovingSlider = true;
+      _speedValue = value.round();
+    });
+  }
+
+  // Handle speed slider release
+  void onSpeedChangeEnd(double value) {
+    int speed = value.round();
+    writeToCharacteristic("5cfd3a88-6b69-4396-85e3-bdef0b414d0a", speed, "Speed");
+    
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setState(() {
+        _userIsMovingSlider = false;
       });
     });
   }
@@ -297,51 +331,192 @@ class _DeviceScreenState extends State<DeviceScreen> {
     );
   }
 
-  // Build the permanent timer picker
-  Widget buildTimerPicker() {
+  // Build icon button with opacity fade
+  Widget buildIconButton({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onPressed,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: isConnected ? onPressed : null,
+          child: AnimatedOpacity(
+            opacity: isConnected ? 1.0 : 0.5,
+            duration: const Duration(milliseconds: 350),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isActive ? Colors.blue.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isActive ? Colors.blue : Colors.grey,
+                  width: 2,
+                ),
+              ),
+              padding: const EdgeInsets.all(25.0),
+              child: Icon(
+                icon,
+                size: 40,
+                color: isActive ? Colors.blue : Colors.grey,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: isActive ? Colors.blue : Colors.grey,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build the speed slider
+  Widget buildSpeedSlider() {
     return Card(
       elevation: 2,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Speed',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '$_speedValue',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: _speedValue.toDouble(),
+              min: 1,
+              max: 4,
+              divisions: 3,
+              label: _speedValue.toString(),
+              onChanged: isConnected ? onSpeedChanged : null,
+              onChangeEnd: isConnected ? onSpeedChangeEnd : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build the permanent timer picker
+  Widget buildTimerPicker() {
+    String endTime = getTimerEndTime();
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            // Cupertino Picker
+            Expanded(
+              child: Column(
+                children: [
+                  const Text(
+                    'Minutes',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 150,
+                    child: CupertinoPicker(
+                      scrollController: _pickerController,
+                      itemExtent: 40,
+                      looping: false, // No looping
+                      onSelectedItemChanged: onPickerChanged,
+                      children: List<Widget>.generate(100, (int index) { // 0-99
+                        return Center(
+                          child: Text(
+                            '$index',
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(width: 16),
+            
+            // Start Timer Button
+            Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.timer, color: Colors.blue),
-                const SizedBox(width: 8),
-                const Text(
-                  'Timer Value',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                GestureDetector(
+                  onTap: isConnected 
+                    ? () => writeToCharacteristic("5cfd3a89-6b69-4396-85e3-bdef0b414d0a", 1, "Timer")
+                    : null,
+                  child: AnimatedOpacity(
+                    opacity: isConnected ? 1.0 : 0.5,
+                    duration: const Duration(milliseconds: 350),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _isTimerOn ? Colors.orange.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _isTimerOn ? Colors.orange : Colors.grey,
+                          width: 2,
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Icon(
+                        Icons.hourglass_bottom,
+                        size: 32,
+                        color: _isTimerOn ? Colors.orange : Colors.grey,
+                      ),
+                    ),
+                  ),
                 ),
-                if (_userIsScrolling) ...[
-                  const SizedBox(width: 8),
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(height: 8),
+                Text(
+                  _isTimerOn ? 'Timer\nStarted' : 'Start\nTimer',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: _isTimerOn ? FontWeight.bold : FontWeight.normal,
+                    color: _isTimerOn ? Colors.orange : Colors.grey,
+                  ),
+                ),
+                if (_isTimerOn && endTime.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    endTime,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
                   ),
                 ],
               ],
             ),
-          ),
-          SizedBox(
-            height: 150,
-            child: CupertinoPicker(
-              scrollController: _pickerController,
-              itemExtent: 40,
-              onSelectedItemChanged: onPickerChanged,
-              children: List<Widget>.generate(256, (int index) {
-                return Center(
-                  child: Text(
-                    '$index',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                );
-              }),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -362,76 +537,37 @@ class _DeviceScreenState extends State<DeviceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Permanent Timer Picker
-          buildTimerPicker(),
+          // Top row: Power and Swing icons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 35.0),
+                child: buildIconButton(
+                  icon: Icons.power_settings_new,
+                  label: 'Power',
+                  isActive: _isPowerOn,
+                  onPressed: () => writeToCharacteristic("5cfd3a86-6b69-4396-85e3-bdef0b414d0a", 1, "Power"),
+                ),
+              ),
+              buildIconButton(
+                icon: Icons.sync,
+                label: 'Swing',
+                isActive: _isSwingOn,
+                onPressed: () => writeToCharacteristic("5cfd3a8a-6b69-4396-85e3-bdef0b414d0a", 1, "Swing"),
+              ),
+            ],
+          ),
           
           const SizedBox(height: 20),
           
-          // Power Button
-          ElevatedButton.icon(
-            onPressed: isConnected 
-              ? () => writeToCharacteristic("5cfd3a86-6b69-4396-85e3-bdef0b414d0a", "Power")
-              : null,
-            icon: const Icon(Icons.power_settings_new, size: 28),
-            label: const Text("Power On/Off", style: TextStyle(fontSize: 18)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 60),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
+          // Speed Slider
+          buildSpeedSlider(),
           
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           
-          // Speed Button
-          ElevatedButton.icon(
-            onPressed: isConnected 
-              ? () => writeToCharacteristic("5cfd3a88-6b69-4396-85e3-bdef0b414d0a", "Speed")
-              : null,
-            icon: const Icon(Icons.speed, size: 28),
-            label: const Text("Speed (1-4)", style: TextStyle(fontSize: 18)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 60),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-          
-          const SizedBox(height: 12),
-          
-          // Timer On/Off Button
-          ElevatedButton.icon(
-            onPressed: isConnected 
-              ? () => writeToCharacteristic("5cfd3a89-6b69-4396-85e3-bdef0b414d0a", "Timer")
-              : null,
-            icon: const Icon(Icons.timer_outlined, size: 28),
-            label: const Text("Timer On/Off", style: TextStyle(fontSize: 18)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 60),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-          
-          const SizedBox(height: 12),
-          
-          // Swing Button
-          ElevatedButton.icon(
-            onPressed: isConnected 
-              ? () => writeToCharacteristic("5cfd3a8a-6b69-4396-85e3-bdef0b414d0a", "Swing")
-              : null,
-            icon: const Icon(Icons.sync, size: 28),
-            label: const Text("Swing", style: TextStyle(fontSize: 18)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 60),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
+          // Timer Picker with Start Timer button
+          buildTimerPicker(),
         ],
       ),
     );
