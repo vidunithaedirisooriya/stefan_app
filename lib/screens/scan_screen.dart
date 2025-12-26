@@ -265,11 +265,6 @@ class _ScanScreenState extends State<ScanScreen> {
         appBar: AppBar(
           title: const Text('Find Devices'),
           actions: [
-            IconButton(
-              icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
-              onPressed: widget.onThemeToggle,
-              tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
-            ),
             buildScanButton(),
             const SizedBox(width: 15),
           ],
@@ -283,6 +278,11 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
         ),
+        floatingActionButton: FloatingActionButton(
+                onPressed: widget.onThemeToggle,
+                tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
+                child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              ),
       ),
     );
   }
