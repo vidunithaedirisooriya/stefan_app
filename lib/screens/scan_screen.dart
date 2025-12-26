@@ -252,7 +252,10 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Iterable<Widget> _buildScanResultTiles() {
-    return _scanResults.map((r) => ScanResultTile(result: r, onTap: () => onConnectPressed(r.device)));
+    // Filter to only show devices with names
+    return _scanResults
+        .where((r) => r.device.platformName.isNotEmpty)
+        .map((r) => ScanResultTile(result: r, onTap: () => onConnectPressed(r.device)));
   }
 
   @override
@@ -265,6 +268,11 @@ class _ScanScreenState extends State<ScanScreen> {
         appBar: AppBar(
           title: const Text('Find Devices'),
           actions: [
+            IconButton(
+              icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              onPressed: widget.onThemeToggle,
+              tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
+            ),
             buildScanButton(),
             const SizedBox(width: 15),
           ],
@@ -278,11 +286,6 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-                onPressed: widget.onThemeToggle,
-                tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
-                child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
-              ),
       ),
     );
   }
