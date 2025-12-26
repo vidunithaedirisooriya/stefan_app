@@ -14,7 +14,14 @@ import '../widgets/scan_result_tile.dart';
 import '../utils/extra.dart';
 
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key});
+  final VoidCallback onThemeToggle;
+  final ThemeMode themeMode;
+
+  const ScanScreen({
+    super.key,
+    required this.onThemeToggle,
+    required this.themeMode,
+  });
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -250,12 +257,22 @@ class _ScanScreenState extends State<ScanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    bool isDarkMode = widget.themeMode == ThemeMode.dark;
+    
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyB,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Find Devices'),
-          actions: [buildScanButton(), const SizedBox(width: 15)],
+          actions: [
+            IconButton(
+              icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              onPressed: widget.onThemeToggle,
+              tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
+            ),
+            buildScanButton(),
+            const SizedBox(width: 15),
+          ],
         ),
         body: RefreshIndicator(
           onRefresh: onRefresh,

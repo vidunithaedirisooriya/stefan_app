@@ -79,34 +79,41 @@ class _DeviceScreenState extends State<DeviceScreen> {
       onDeviceNameChanged: (name) => setState(() => _deviceName = name),
     );
 
-   
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-    _connectionState = state;
-  
-    if (state == BluetoothConnectionState.connected) {
-      // Save device to memory
-      await DeviceMemory.saveDevice(
-        widget.device.remoteId.toString(),
-        widget.device.platformName,
-      );
-    
-      try {
-        await _bleManager.discoverAndSubscribe();
-        if (mounted) {
-          Snackbar.show(ABC.c, "Connected to remote", success: true);
-        }
-      } catch (e) {
-        if (mounted) {
-          Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+        _connectionStateSubscription = widget.device.connectionState.listen((state) async {
+      _connectionState = state;
+
+      if (state == BluetoothConnectionState.connected) {
+        // Save device to memory
+        await DeviceMemory.saveDevice(
+          widget.device.remoteId.toString(),
+          widget.device.platformName,
+        );
+
+        try {
+          await _bleManager.discoverAndSubscribe();
+          if (mounted) {
+            Snackbar.show(ABC.c, "Connected to remote", success: true);
+          }
+        } catch (e) {
+          if (mounted) {
+            Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+          }
         }
       }
-    }
-  
-    if (mounted) {
-      setState(() {});
-    }
-  });
 
+      // REMOVED: Auto-navigate back if disconnected
+      // Only show a message, don't navigate
+      if (state == BluetoothConnectionState.disconnected) {
+        if (mounted) {
+          Snackbar.show(ABC.c, "Device disconnected", success: false);
+          // DO NOT call Navigator.of(context).pop() here
+        }
+      }
+
+      if (mounted) {
+        setState(() {});
+      }
+    });
 
     _isConnectingSubscription = widget.device.isConnecting.listen((value) {
       if (mounted) {
@@ -133,47 +140,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
   }
 
   bool get isConnected => _connectionState == BluetoothConnectionState.connected;
-
-  Future<void> onConnectPressed() async {
-    try {
-      await widget.device.connectAndUpdateStream();
-      if (mounted) {
-        Snackbar.show(ABC.c, "Connect: Success", success: true);
-      }
-    } catch (e) {
-      if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
-        // ignore
-      } else if (mounted) {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-      }
-    }
-  }
-
-  Future<void> onCancelPressed() async {
-    try {
-      await widget.device.disconnectAndUpdateStream(queue: false);
-      if (mounted) {
-        Snackbar.show(ABC.c, "Cancel: Success", success: true);
-      }
-    } catch (e) {
-      if (mounted) {
-        Snackbar.show(ABC.c, prettyException("Cancel Error:", e), success: false);
-      }
-    }
-  }
-
-  Future<void> onDisconnectPressed() async {
-    try {
-      await widget.device.disconnectAndUpdateStream();
-      if (mounted) {
-        Snackbar.show(ABC.c, "Disconnect: Success", success: true);
-      }
-    } catch (e) {
-      if (mounted) {
-        Snackbar.show(ABC.c, prettyException("Disconnect Error:", e), success: false);
-      }
-    }
-  }
 
   Future<void> showRenameDialog() async {
     String? newName = await DeviceRenameDialog.show(context, _deviceName);
@@ -242,20 +208,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     });
   }
 
-  Widget buildSpinner(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(14.0),
-      child: SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.5,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
-
   Widget buildRemoteControl() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -313,46 +265,62 @@ class _DeviceScreenState extends State<DeviceScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ScaffoldMessenger(
+  @override
+Widget build(BuildContext context) {
+  return PopScope(
+    canPop: false, // Prevent automatic pop
+    onPopInvokedWithResult: (bool didPop, dynamic result) async {
+      if (didPop) {
+        return; // Already popped, do nothing
+      }
+      
+      // Disconnect first
+      if (isConnected) {
+        try {
+          await widget.device.disconnect();
+        } catch (e) {
+          print("Error disconnecting on back: $e");
+        }
+      }
+      
+      // Then manually pop
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    },
+    child: ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () async {
+              // Disconnect when back button pressed
+              if (isConnected) {
+                try {
+                  await widget.device.disconnect();
+                } catch (e) {
+                  print("Error disconnecting: $e");
+                }
+              }
+              Navigator.pop(context);
+            },
           ),
-          title: Text(_deviceName),
-          actions: [
-            if (!isConnected && !_isConnecting && !_isDisconnecting)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: ElevatedButton(
-                  onPressed: onConnectPressed,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    elevation: 4,
-                  ),
-                  child: const Text("CONNECT"),
-                ),
-              ),
-            if (_isConnecting || _isDisconnecting)
-              buildSpinner(context),
-            if (isConnected && !_isDisconnecting)
-              TextButton(
-                onPressed: onDisconnectPressed,
+          title: Row(
+            children: [
+              Expanded(
                 child: Text(
-                  "DISCONNECT",
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  _deviceName,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: showRenameDialog,
-              tooltip: 'Rename device',
-            ),
-          ],
+              IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: showRenameDialog,
+                tooltip: 'Rename device',
+              ),
+            ],
+          ),
         ),
         body: SingleChildScrollView(
           child: isConnected 
@@ -365,6 +333,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

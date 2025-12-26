@@ -28,6 +28,7 @@ class FlutterBlueApp extends StatefulWidget {
 
 class _FlutterBlueAppState extends State<FlutterBlueApp> {
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+  ThemeMode _themeMode = ThemeMode.system;
 
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
 
@@ -48,15 +49,46 @@ class _FlutterBlueAppState extends State<FlutterBlueApp> {
     super.dispose();
   }
 
+  void _toggleTheme() {
+    setState(() {
+      _themeMode = _themeMode == ThemeMode.light 
+          ? ThemeMode.dark 
+          : ThemeMode.light;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget screen = _adapterState == BluetoothAdapterState.on
-        ? const ScanScreen()
+        ? ScanScreen(onThemeToggle: _toggleTheme, themeMode: _themeMode)
         : BluetoothOffScreen(adapterState: _adapterState);
 
     return MaterialApp(
       color: Colors.lightBlue,
       debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 2,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 2,
+        ),
+      ),
       home: screen,
       navigatorObservers: [BluetoothAdapterStateObserver()],
     );
