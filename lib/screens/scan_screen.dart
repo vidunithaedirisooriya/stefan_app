@@ -7,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'device_screen.dart';
 import '../utils/snackbar.dart';
+import '../utils/auto_connect_manager.dart';
+import '../utils/device_memory.dart';
 import '../widgets/system_device_tile.dart';
 import '../widgets/scan_result_tile.dart';
 import '../utils/extra.dart';
@@ -22,6 +24,7 @@ class _ScanScreenState extends State<ScanScreen> {
   List<BluetoothDevice> _systemDevices = [];
   List<ScanResult> _scanResults = [];
   bool _isScanning = false;
+  bool _isAutoConnecting = false;
   late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
   late StreamSubscription<bool> _isScanningSubscription;
 
@@ -42,6 +45,11 @@ class _ScanScreenState extends State<ScanScreen> {
         setState(() => _isScanning = state);
       }
     });
+
+    // Attempt auto-connect after a short delay
+    Future.delayed(Duration(milliseconds: 500), () {
+      _attemptAutoConnect();
+    });
   }
 
   @override
@@ -51,21 +59,57 @@ class _ScanScreenState extends State<ScanScreen> {
     super.dispose();
   }
 
+  // Attempt to auto-connect to a remembered device
+  Future<void> _attemptAutoConnect() async {
+    if (!mounted) return;
+
+    // Request permissions first
+    bool hasPermission = await _requestPermissions();
+    if (!hasPermission) {
+      return;
+    }
+
+    setState(() => _isAutoConnecting = true);
+
+    try {
+      BluetoothDevice? device = await AutoConnectManager.findAndConnectToBestDevice();
+      
+      if (device != null && mounted) {
+        // Navigate to device screen
+        MaterialPageRoute route = MaterialPageRoute(
+          builder: (context) => DeviceScreen(device: device),
+          settings: RouteSettings(name: '/DeviceScreen'),
+        );
+        Navigator.of(context).push(route);
+      } else if (mounted) {
+        // No device found, show message
+        Snackbar.show(ABC.b, "No known devices nearby", success: false);
+      }
+    } catch (e) {
+      if (mounted) {
+        print("Auto-connect error: $e");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAutoConnecting = false);
+      }
+    }
+  }
+
   Future<bool> _requestPermissions() async {
     if (Platform.isAndroid) {
       Map<Permission, PermissionStatus> statuses = await [
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
-        Permission.location, // Required on Android 11 and below
+        Permission.location,
       ].request();
       
       return statuses[Permission.bluetoothScan]?.isGranted ?? false;
     }
-    return true; // iOS handles permissions differently
+    return true;
   }
 
   Future<void> onScanPressed() async {
-    // Request permissions first
     bool hasPermission = await _requestPermissions();
     
     if (!hasPermission) {
@@ -74,8 +118,7 @@ class _ScanScreenState extends State<ScanScreen> {
     }
 
     try {
-      // `withServices` is required on iOS for privacy purposes, ignored on android.
-      var withServices = [Guid("180f")]; // Battery Level Service
+      var withServices = [Guid("180f")];
       _systemDevices = await FlutterBluePlus.systemDevices(withServices);
     } catch (e, backtrace) {
       Snackbar.show(ABC.b, prettyException("System Devices Error:", e), success: false);
@@ -87,10 +130,10 @@ class _ScanScreenState extends State<ScanScreen> {
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 15),
         webOptionalServices: [
-          Guid("180f"), // battery
-          Guid("180a"), // device info
-          Guid("1800"), // generic access
-          Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e"), // Nordic UART
+          Guid("180f"),
+          Guid("180a"),
+          Guid("1800"),
+          Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e"),
         ],
       );
     } catch (e, backtrace) {
@@ -119,7 +162,8 @@ class _ScanScreenState extends State<ScanScreen> {
       Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
     });
     MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => DeviceScreen(device: device), settings: RouteSettings(name: '/DeviceScreen'));
+        builder: (context) => DeviceScreen(device: device), 
+        settings: RouteSettings(name: '/DeviceScreen'));
     Navigator.of(context).push(route);
   }
 
@@ -134,6 +178,17 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Widget buildScanButton() {
+    if (_isAutoConnecting) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildSpinner(),
+          SizedBox(width: 8),
+          Text("Auto-connecting...", style: TextStyle(fontSize: 12)),
+        ],
+      );
+    }
+
     final button = _isScanning
         ? ElevatedButton(
             onPressed: onStopPressed,
@@ -211,7 +266,6 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
         ),
-        // floatingActionButton: buildScanButton(context),
       ),
     );
   }
