@@ -5,6 +5,9 @@ This is the mobile app that controls [Venturo](https://github.com/vidunithaediri
 
 <img src="screenshots_for_readme/dark_mode_device_screen.jpg" alt="dark mode device screen" width=320> <img src="screenshots_for_readme/dark_mode_scan_screen.jpg" alt="dark mode scan screen" width=320>
 
+
+
+
 ### BRIGHTNESS WARNING: LIGHT MODE SCREENSHOT INCOMING
 
 
