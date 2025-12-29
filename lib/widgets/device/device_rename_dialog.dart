@@ -23,7 +23,7 @@ class DeviceRenameDialog {
               ),
               const SizedBox(height: 8),
               const Text(
-                '(renaming as nothing will reset to factory name)',
+                'Effective after restarting the fan.Renaming as nothing will reset to factory name',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
