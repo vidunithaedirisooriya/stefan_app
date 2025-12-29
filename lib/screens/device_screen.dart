@@ -165,7 +165,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await _bleManager.writeValue(uuid, value);
       if (mounted) {
-        Snackbar.show(ABC.c, "$buttonName activated", success: true);
+        // Snackbar.show(ABC.c, "$buttonName activated", success: true);
       }
     } catch (e) {
       if (mounted) {
