@@ -1,4 +1,6 @@
-// Copyright 2017-2023, Charles Weinberger & Paul DeMarco.
+//This sketch is based on the flutter_blue_plus example code of
+// Original Copyright 2017-2023, Charles Weinberger & Paul DeMarco.
+//Modified by Vidunitha Edirisooriya 2025.
 // All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
