@@ -31,7 +31,7 @@ class DeviceIconButton extends StatelessWidget {
                 color: isActive ? Colors.blue.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isActive ? Colors.blue : Colors.grey,
+                  color: isActive ? Colors.blue : Theme.of(context).colorScheme.surfaceContainer,
                   width: 2,
                 ),
               ),

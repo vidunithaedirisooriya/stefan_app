@@ -48,7 +48,7 @@ class DeviceMemory {
       List<dynamic> decoded = jsonDecode(historyJson);
       return decoded.cast<Map<String, dynamic>>();
     } catch (e) {
-      print("Error decoding device history: $e");
+      // ("Error decoding device history: $e");
       return [];
     }
   }

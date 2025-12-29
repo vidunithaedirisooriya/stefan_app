@@ -219,7 +219,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.only(top: 28.0, left: 12, right: 12, bottom: 12),
                 child: DeviceIconButton(
                   icon: Icons.power_settings_new,
                   label: 'Power',
@@ -279,7 +279,7 @@ Widget build(BuildContext context) {
         try {
           await widget.device.disconnect();
         } catch (e) {
-          print("Error disconnecting on back: $e");
+          // print("Error disconnecting on back: $e");
         }
       }
       
@@ -300,7 +300,7 @@ Widget build(BuildContext context) {
                 try {
                   await widget.device.disconnect();
                 } catch (e) {
-                  print("Error disconnecting: $e");
+                  // print("Error disconnecting: $e");
                 }
               }
               Navigator.pop(context);

@@ -53,16 +53,24 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(
-        widget.result.device.platformName,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
+    return Padding(
+      padding: const EdgeInsets.only(top: 15.0, left: 5.0, right: 5.0),
+      child: ListTile(
+        title: Text(
+          widget.result.device.platformName,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+          ),
         ),
+        trailing: _buildConnectButton(context),
+        contentPadding: const EdgeInsets.only(right: 16.0, top: 4.0, bottom: 4.0, left: 20.0),
+        tileColor: Theme.of(context).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius:BorderRadiusGeometry.circular(18) ,
+        ),
+        minVerticalPadding: 4.0,
       ),
-      trailing: _buildConnectButton(context),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
     );
   }
 }

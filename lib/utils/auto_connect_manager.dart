@@ -3,13 +3,13 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'device_memory.dart';
 
 class AutoConnectManager {
-  static const int _scanDuration = 5; // Scan for 5 seconds
-  static const int _minRSSI = -80; // Only consider devices with RSSI > -80
+  static const int _scanDuration = 3; // Scan for 5 seconds
+  static const int _minRSSI = -95; // Only consider devices with RSSI > -80
   
   // Find and connect to the best available device
   static Future<BluetoothDevice?> findAndConnectToBestDevice() async {
     try {
-      print("Starting auto-connect scan...");
+      // print("Starting auto-connect scan...");
       
       // Start scanning
       List<ScanResult> foundDevices = [];
@@ -29,11 +29,11 @@ class AutoConnectManager {
       await subscription.cancel();
       
       if (foundDevices.isEmpty) {
-        print("No devices found during auto-connect");
+        // print("No devices found during auto-connect");
         return null;
       }
       
-      print("Found ${foundDevices.length} devices");
+      // print("Found ${foundDevices.length} devices");
       
       // Filter and score devices
       List<Map<String, dynamic>> scoredDevices = [];
@@ -67,11 +67,11 @@ class AutoConnectManager {
           'historyPriority': historyPriority,
         });
         
-        print("Device: ${result.device.platformName} | RSSI: $rssi | Priority: $historyPriority | Score: $totalScore");
+        // print("Device: ${result.device.platformName} | RSSI: $rssi | Priority: $historyPriority | Score: $totalScore");
       }
       
       if (scoredDevices.isEmpty) {
-        print("No known devices found nearby");
+        // print("No known devices found nearby");
         return null;
       }
       
@@ -81,25 +81,25 @@ class AutoConnectManager {
       // Get the best device
       BluetoothDevice bestDevice = scoredDevices.first['device'];
       
-      print("Best device to connect: ${bestDevice.platformName} (Score: ${scoredDevices.first['score']})");
+      // print("Best device to connect: ${bestDevice.platformName} (Score: ${scoredDevices.first['score']})");
       
       // Try to connect
       try {
         await bestDevice.connect(timeout: Duration(seconds: 10));
-        print("Successfully connected to ${bestDevice.platformName}");
+        // print("Successfully connected to ${bestDevice.platformName}");
         return bestDevice;
       } catch (e) {
-        print("Failed to connect to best device: $e");
+        // print("Failed to connect to best device: $e");
         
         // Try the next best device if available
         if (scoredDevices.length > 1) {
           try {
             BluetoothDevice secondBest = scoredDevices[1]['device'];
             await secondBest.connect(timeout: Duration(seconds: 10));
-            print("Connected to second best device: ${secondBest.platformName}");
+            // print("Connected to second best device: ${secondBest.platformName}");
             return secondBest;
           } catch (e2) {
-            print("Failed to connect to second best device: $e2");
+            // print("Failed to connect to second best device: $e2");
           }
         }
         
@@ -107,7 +107,7 @@ class AutoConnectManager {
       }
       
     } catch (e) {
-      print("Error in auto-connect: $e");
+      // print("Error in auto-connect: $e");
       return null;
     }
   }
@@ -137,7 +137,7 @@ class AutoConnectManager {
             await result.device.connect(timeout: Duration(seconds: 10));
             return true;
           } catch (e) {
-            print("Failed to connect to device: $e");
+            // print("Failed to connect to device: $e");
             return false;
           }
         }
@@ -145,7 +145,7 @@ class AutoConnectManager {
       
       return false;
     } catch (e) {
-      print("Error connecting to specific device: $e");
+      // print("Error connecting to specific device: $e");
       return false;
     }
   }

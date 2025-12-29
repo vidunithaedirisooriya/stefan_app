@@ -45,14 +45,6 @@ class DeviceTimerPicker extends StatelessWidget {
             Expanded(
               child: Column(
                 children: [
-                  const Text(
-                    'Minutes',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  ),
                   const SizedBox(height: 8),
                   SizedBox(
                     height: 150,
@@ -69,6 +61,14 @@ class DeviceTimerPicker extends StatelessWidget {
                           ),
                         );
                       }),
+                    ),
+                  ),
+                  const Text(
+                    'Minutes',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
                     ),
                   ),
                 ],
@@ -91,7 +91,7 @@ class DeviceTimerPicker extends StatelessWidget {
                         color: isTimerOn ? Colors.orange.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isTimerOn ? Colors.orange : Colors.grey,
+                          color: isTimerOn ? Colors.orange : Theme.of(context).colorScheme.surfaceContainer,
                           width: 2,
                         ),
                       ),

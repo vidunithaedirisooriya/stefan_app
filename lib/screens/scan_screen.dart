@@ -94,7 +94,7 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     } catch (e) {
       if (mounted) {
-        print("Auto-connect error: $e");
+        // print("Auto-connect error: $e");
       }
     } finally {
       if (mounted) {
@@ -129,8 +129,8 @@ class _ScanScreenState extends State<ScanScreen> {
       _systemDevices = await FlutterBluePlus.systemDevices(withServices);
     } catch (e, backtrace) {
       Snackbar.show(ABC.b, prettyException("System Devices Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
+      // print(e);
+      // print("backtrace: $backtrace");
     }
     
     try {
@@ -145,8 +145,8 @@ class _ScanScreenState extends State<ScanScreen> {
       );
     } catch (e, backtrace) {
       Snackbar.show(ABC.b, prettyException("Start Scan Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
+      // print(e);
+      // print("backtrace: $backtrace");
     }
     
     if (mounted) {
@@ -159,8 +159,8 @@ class _ScanScreenState extends State<ScanScreen> {
       FlutterBluePlus.stopScan();
     } catch (e, backtrace) {
       Snackbar.show(ABC.b, prettyException("Stop Scan Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
+      // print(e);
+      // print("backtrace: $backtrace");
     }
   }
 
@@ -205,12 +205,8 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
             child: const Text("STOP"),
           )
-        : ElevatedButton(
+         : ElevatedButton(
             onPressed: onScanPressed,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-            ),
             child: const Text("SCAN"),
           );
 
@@ -268,11 +264,6 @@ class _ScanScreenState extends State<ScanScreen> {
         appBar: AppBar(
           title: const Text('Find Devices'),
           actions: [
-            IconButton(
-              icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
-              onPressed: widget.onThemeToggle,
-              tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
-            ),
             buildScanButton(),
             const SizedBox(width: 15),
           ],
@@ -286,6 +277,11 @@ class _ScanScreenState extends State<ScanScreen> {
             ],
           ),
         ),
+        floatingActionButton: FloatingActionButton(
+                onPressed: widget.onThemeToggle,
+                tooltip: isDarkMode ? 'Light Mode' : 'Dark Mode',
+                child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              ),
       ),
     );
   }

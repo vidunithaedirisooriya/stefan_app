@@ -67,29 +67,51 @@ class _FlutterBlueAppState extends State<FlutterBlueApp> {
       color: Colors.lightBlue,
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+        theme: ThemeData(
+          useMaterial3: true,
           brightness: Brightness.light,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
+          ),
+          primaryColor: Colors.blue,
+          appBarTheme: const AppBarTheme(
+            centerTitle: false,
+            elevation: 2,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
         ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 2,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+        darkTheme: ThemeData(
+          useMaterial3: true,
           brightness: Brightness.dark,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ).copyWith(
+            primary: Colors.blue[900],
+            secondary: Colors.blueAccent,
+            error: Colors.red,
+            surfaceContainer: Colors.grey[870],
+          ),
+          primaryColor: Colors.blue[900],
+          appBarTheme: AppBarTheme(
+            centerTitle: false,
+            elevation: 2,
+            backgroundColor: Colors.grey[900],
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[900],
+              foregroundColor: Colors.white,
+            ),
+          ),
         ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 2,
-        ),
-      ),
-      home: screen,
+              home: screen,
       navigatorObservers: [BluetoothAdapterStateObserver()],
     );
   }

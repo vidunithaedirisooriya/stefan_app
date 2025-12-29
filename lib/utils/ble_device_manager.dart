@@ -86,7 +86,7 @@ class BLEDeviceManager {
             onDeviceNameChanged?.call(name);
           }
         } catch (e) {
-          print("Error decoding device name: $e");
+          // print("Error decoding device name: $e");
         }
         break;
     }
