@@ -1,1 +1,0 @@
-This is the app to control venturo with BLE
